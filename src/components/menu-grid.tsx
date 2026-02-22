@@ -1,9 +1,27 @@
-import { Pencil, ExternalLink, Info } from "lucide-react"
+﻿import { useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { Pencil, ExternalLink, Info, Clock, CheckCircle2, ArrowRight } from "lucide-react"
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
+
+export interface VersionEntry {
+  version: string
+  date: string
+  author: string
+  changes: string
+}
 
 export interface MenuItem {
   id: string
@@ -17,6 +35,18 @@ export interface MenuItem {
   iconColor?: string
   /** Tailwind color for left accent border */
   accentColor?: string
+  /** App Status */
+  status?: "online" | "offline" | "maintenance"
+  /** Roles that can see this app */
+  allowedRoles?: ("SYSTEM-ADMIN" | "MANAGER" | "STAFF")[]
+  /** Branch specific visibility */
+  branches?: string[]
+  /** App Version */
+  version?: string
+  /** Whether the app is developed/managed internally */
+  isInternal?: boolean
+  /** For System Admins only */
+  versionHistory?: VersionEntry[]
 }
 
 export interface MenuGroup {
@@ -30,6 +60,60 @@ export interface MenuGroup {
 
 const defaultMenuGroups: MenuGroup[] = [
   {
+    id: "admin-tools",
+    label: "Hệ thống quản trị (Admin Control)",
+    labelBg: "bg-fuchsia-100",
+    labelColor: "text-fuchsia-700",
+    items: [
+      {
+        id: "registry",
+        title: "App Registry",
+        description: "Quản lý mục lục & URLs ứng dụng trung tâm cho toàn bộ tập đoàn.",
+        url: "/gateway-control/registry",
+        icon: "🔐",
+        iconBg: "bg-rose-100",
+        iconColor: "text-rose-600",
+        status: "online",
+        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
+        version: "v2.5.1",
+        isInternal: true,
+        versionHistory: [
+          { version: "v2.5.1", date: "2024-05-20", author: "admin_root", changes: "Cập nhật logic phân phối URL theo vùng miền" },
+          { version: "v2.4.9", date: "2024-05-15", author: "dev_team", changes: "Vá lỗi bảo mật CSRF trong console" },
+        ],
+      },
+      {
+        id: "permissions",
+        title: "Role & RBAC",
+        description: "Định nghĩa vai trò, gán quyền và quản lý vòng đời người dùng.",
+        url: "/gateway-control/rbac",
+        icon: "👥",
+        iconBg: "bg-indigo-100",
+        iconColor: "text-indigo-600",
+        status: "online",
+        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
+        version: "v1.2.0",
+        isInternal: true,
+        versionHistory: [
+          { version: "v1.2.0", date: "2024-02-10", author: "security_lead", changes: "Tích hợp EntraID v2" },
+        ],
+      },
+      {
+        id: "monitoring",
+        title: "System Health",
+        description: "Theo dõi tình trạng máy chủ, logs lỗi và hiệu năng thời gian thực.",
+        url: "/gateway-control",
+        icon: "📊",
+        iconBg: "bg-emerald-100",
+        iconColor: "text-emerald-600",
+        status: "maintenance",
+        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
+        version: "v4.0.0-rc1",
+        isInternal: true,
+      },
+    ],
+  },
+  {
     id: "pharmacy",
     label: "Nhà thuốc",
     labelBg: "bg-green-100",
@@ -38,42 +122,26 @@ const defaultMenuGroups: MenuGroup[] = [
       {
         id: "pos",
         title: "POS Nhà thuốc",
-        description: "Bán hàng tại quầy & thanh toán",
+        description: "Giao diện bán lẻ nhanh, tích hợp thanh toán QR và quản lý ca trực.",
         url: "https://pos.nhathuoc.vn",
         icon: "💊",
         iconBg: "bg-green-100",
         iconColor: "text-green-600",
-        accentColor: "border-l-green-500",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v5.8.0",
       },
       {
         id: "pharmacy-mgmt",
-        title: "Quản lý nhà thuốc",
-        description: "Chuỗi nhà thuốc & chi nhánh",
+        title: "Quản lý chuỗi",
+        description: "Điều phối tồn kho giữa các chi nhánh, báo cáo doanh thu tổng hợp.",
         url: "https://mgmt.nhathuoc.vn",
         icon: "🏪",
         iconBg: "bg-emerald-100",
         iconColor: "text-emerald-600",
-        accentColor: "border-l-emerald-500",
-      },
-      {
-        id: "prescription",
-        title: "Đơn thuốc",
-        description: "Kê đơn & kiểm tra tương tác",
-        url: "https://prescription.nhathuoc.vn",
-        icon: "📝",
-        iconBg: "bg-teal-100",
-        iconColor: "text-teal-600",
-        accentColor: "border-l-teal-500",
-      },
-      {
-        id: "pharmacy-report",
-        title: "Báo cáo dược",
-        description: "Doanh thu & báo cáo GPP",
-        url: "https://report.nhathuoc.vn",
-        icon: "📊",
-        iconBg: "bg-cyan-100",
-        iconColor: "text-cyan-600",
-        accentColor: "border-l-cyan-500",
+        status: "online",
+        allowedRoles: ["MANAGER", "SYSTEM-ADMIN"],
+        version: "v3.2.1",
       },
     ],
   },
@@ -86,42 +154,17 @@ const defaultMenuGroups: MenuGroup[] = [
       {
         id: "wms",
         title: "Quản lý kho (WMS)",
-        description: "Nhập xuất tồn & kiểm kê",
+        description: "Hệ thống quản lý nhập xuất, vị trí kho và tối ưu hóa lấy hàng.",
         url: "https://wms.nhathuoc.vn",
         icon: "🏭",
         iconBg: "bg-amber-100",
         iconColor: "text-amber-600",
-        accentColor: "border-l-amber-500",
-      },
-      {
-        id: "procurement",
-        title: "Mua hàng",
-        description: "Đặt hàng & nhà cung cấp",
-        url: "https://procurement.nhathuoc.vn",
-        icon: "🛒",
-        iconBg: "bg-orange-100",
-        iconColor: "text-orange-600",
-        accentColor: "border-l-orange-500",
-      },
-      {
-        id: "logistics",
-        title: "Vận chuyển",
-        description: "Giao nhận & tuyến đường",
-        url: "https://logistics.nhathuoc.vn",
-        icon: "🚚",
-        iconBg: "bg-yellow-100",
-        iconColor: "text-yellow-600",
-        accentColor: "border-l-yellow-500",
-      },
-      {
-        id: "inventory",
-        title: "Kiểm kê tồn kho",
-        description: "Cảnh báo hết hạn & lô hàng",
-        url: "https://inventory.nhathuoc.vn",
-        icon: "📋",
-        iconBg: "bg-lime-100",
-        iconColor: "text-lime-600",
-        accentColor: "border-l-lime-500",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v2.10.4",
+        versionHistory: [
+          { version: "v2.10.4", date: "2024-05-18", author: "wms_prod", changes: "Tối ưu hóa thuật toán FIFO cho kho mát" },
+        ],
       },
     ],
   },
@@ -132,44 +175,16 @@ const defaultMenuGroups: MenuGroup[] = [
     labelColor: "text-blue-700",
     items: [
       {
-        id: "clinic-booking",
-        title: "Đặt lịch khám",
-        description: "Lịch hẹn & lịch bác sĩ",
-        url: "https://booking.phongkham.vn",
-        icon: "📅",
-        iconBg: "bg-blue-100",
-        iconColor: "text-blue-600",
-        accentColor: "border-l-blue-500",
-      },
-      {
         id: "emr",
-        title: "Bệnh án (EMR)",
-        description: "Hồ sơ bệnh án & xét nghiệm",
+        title: "Bệnh án điện tử",
+        description: "Quản lý hồ sơ bệnh nhân, kết quả xét nghiệm và lịch sử khám bệnh.",
         url: "https://emr.phongkham.vn",
         icon: "🗂️",
-        iconBg: "bg-indigo-100",
-        iconColor: "text-indigo-600",
-        accentColor: "border-l-indigo-500",
-      },
-      {
-        id: "clinic-mgmt",
-        title: "Quản lý phòng khám",
-        description: "Bác sĩ, thiết bị & dịch vụ",
-        url: "https://mgmt.phongkham.vn",
-        icon: "🏥",
-        iconBg: "bg-sky-100",
-        iconColor: "text-sky-600",
-        accentColor: "border-l-sky-500",
-      },
-      {
-        id: "lab",
-        title: "Xét nghiệm (LIS)",
-        description: "Mẫu xét nghiệm & kết quả",
-        url: "https://lab.phongkham.vn",
-        icon: "🔬",
-        iconBg: "bg-violet-100",
-        iconColor: "text-violet-600",
-        accentColor: "border-l-violet-500",
+        iconBg: "bg-blue-100",
+        iconColor: "text-blue-600",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v1.4.0",
       },
     ],
   },
@@ -181,43 +196,15 @@ const defaultMenuGroups: MenuGroup[] = [
     items: [
       {
         id: "hrm",
-        title: "Nhân sự (HRM)",
-        description: "Hồ sơ & hợp đồng nhân viên",
+        title: "Cổng nhân sự",
+        description: "Xem bảng công, đăng ký nghỉ phép và cập nhật thông tin cá nhân.",
         url: "https://hrm.nhathuoc.vn",
         icon: "👤",
         iconBg: "bg-purple-100",
         iconColor: "text-purple-600",
-        accentColor: "border-l-purple-500",
-      },
-      {
-        id: "payroll",
-        title: "Bảng lương",
-        description: "Lương, thuế & bảo hiểm",
-        url: "https://payroll.nhathuoc.vn",
-        icon: "💰",
-        iconBg: "bg-rose-100",
-        iconColor: "text-rose-600",
-        accentColor: "border-l-rose-500",
-      },
-      {
-        id: "attendance",
-        title: "Chấm công",
-        description: "Ca làm, nghỉ phép & tăng ca",
-        url: "https://attendance.nhathuoc.vn",
-        icon: "⏰",
-        iconBg: "bg-pink-100",
-        iconColor: "text-pink-600",
-        accentColor: "border-l-pink-500",
-      },
-      {
-        id: "recruitment",
-        title: "Tuyển dụng",
-        description: "Ứng viên & phỏng vấn",
-        url: "https://recruitment.nhathuoc.vn",
-        icon: "🎯",
-        iconBg: "bg-fuchsia-100",
-        iconColor: "text-fuchsia-600",
-        accentColor: "border-l-fuchsia-500",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v4.2.0",
       },
     ],
   },
@@ -229,53 +216,28 @@ const defaultMenuGroups: MenuGroup[] = [
     items: [
       {
         id: "erp",
-        title: "ERP",
-        description: "Hoạch định tài nguyên DN",
+        title: "Hệ thống ERP",
+        description: "Quản trị nguồn lực doanh nghiệp tích hợp kế toán và cung ứng.",
         url: "https://erp.nhathuoc.vn",
         icon: "🔗",
         iconBg: "bg-slate-100",
         iconColor: "text-slate-600",
-        accentColor: "border-l-slate-500",
-      },
-      {
-        id: "email",
-        title: "Email nội bộ",
-        description: "Email & liên lạc tập đoàn",
-        url: "https://mail.nhathuoc.vn",
-        icon: "📧",
-        iconBg: "bg-blue-100",
-        iconColor: "text-blue-500",
-        accentColor: "border-l-blue-400",
-      },
-      {
-        id: "wiki",
-        title: "Tri thức (Wiki)",
-        description: "Quy trình SOP & đào tạo",
-        url: "https://wiki.nhathuoc.vn",
-        icon: "📚",
-        iconBg: "bg-amber-100",
-        iconColor: "text-amber-500",
-        accentColor: "border-l-amber-400",
-      },
-      {
-        id: "helpdesk",
-        title: "Helpdesk IT",
-        description: "Hỗ trợ kỹ thuật & sự cố",
-        url: "https://helpdesk.nhathuoc.vn",
-        icon: "🎧",
-        iconBg: "bg-green-100",
-        iconColor: "text-green-500",
-        accentColor: "border-l-green-400",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v2024.Q1",
       },
       {
         id: "notifications",
-        title: "Trung tâm thông báo",
-        description: "Xem tin tức, bảo trì & cảnh báo",
+        title: "Notification Hub",
+        description: "Trung tâm quản lý thông báo, email và tin nhắn hệ thống tập trung.",
         url: "#",
         icon: "🔔",
         iconBg: "bg-rose-100",
         iconColor: "text-rose-500",
-        accentColor: "border-l-rose-400",
+        status: "online",
+        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
+        version: "v2.0.1",
+        isInternal: true,
       },
     ],
   },
@@ -283,97 +245,267 @@ const defaultMenuGroups: MenuGroup[] = [
 
 interface MenuGridProps {
   groups?: MenuGroup[]
+  userRole?: "SYSTEM-ADMIN" | "MANAGER" | "STAFF"
+  searchQuery?: string
 }
 
-export function MenuGrid({ groups = defaultMenuGroups }: MenuGridProps) {
+export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searchQuery = "" }: MenuGridProps) {
+  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
+  const navigate = useNavigate()
+
+  // Simple filtering based on role and search query
+  const filteredGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        const matchesRole = !item.allowedRoles || item.allowedRoles.includes(userRole);
+        const matchesSearch = !searchQuery || 
+          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.description?.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesRole && matchesSearch;
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
+
   return (
-    <div className="flex flex-col gap-8">
-      {groups.map((group) => (
-        <section key={group.id}>
-          <div className="mb-5 flex items-center gap-3">
+    <div className="flex flex-col gap-10">
+      {filteredGroups.map((group) => (
+        <section key={group.id} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="mb-6 flex items-center gap-4">
             <span
-              className={`inline-flex items-center rounded-full px-4 py-1.5 text-sm font-bold tracking-tight shadow-sm ${group.labelBg ?? "bg-muted"} ${group.labelColor ?? "text-foreground"}`}
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-bold tracking-tight shadow-sm border ${group.labelBg ?? "bg-muted"} ${group.labelColor ?? "text-foreground"}`}
             >
               {group.label}
             </span>
-            <div className="bg-border h-px flex-1 opacity-60" />
+            <div className="bg-slate-200 h-px flex-1 opacity-50" />
+
+            {userRole === "SYSTEM-ADMIN" && (
+              <button className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">
+                Configure Group
+              </button>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
-            {group.items.map((item) => (
-              <div
-                key={item.id}
-                className="group relative flex flex-col rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
-              >
-                {/* Invisible Overlay Link for Native Browser Behavior (Right-click "Open in new tab") */}
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="absolute inset-0 z-0 rounded-2xl"
-                  aria-label={`Mở ${item.title}`}
-                />
 
-                {/* Top row: icon + edit */}
-                <div className="mb-3 flex items-start justify-between relative z-10 pointer-events-none">
-                  <div
-                    className={`flex size-10 items-center justify-center rounded-xl text-lg pointer-events-auto ${item.iconBg ?? "bg-muted"} ${item.iconColor ?? "text-foreground"}`}
-                  >
-                    {item.icon ?? item.title.charAt(0)}
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
+            {group.items.map((item) => {
+              const isActive = item.status !== "offline";
+              
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    if (isActive && item.url !== "#") {
+                      if (item.url.startsWith("/")) {
+                        navigate(item.url);
+                      } else {
+                        window.open(item.url, "_blank");
+                      }
+                    }
+                  }}
+                  className={`group relative flex flex-col rounded-3xl border bg-white p-5 shadow-sm transition-all ${
+                    isActive && item.url !== "#" ? "cursor-pointer hover:shadow-xl hover:-translate-y-1 hover:border-primary/30" : "cursor-default"
+                  } ${
+                    !isActive ? "opacity-60 grayscale" : ""
+                  }`}
+                >
+                  {/* Status Badge */}
+                  <div className="absolute top-4 right-4 z-20">
+                    {item.status === "maintenance" && (
+                      <div className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200 uppercase">
+                        <div className="size-1 rounded-full bg-amber-500 animate-pulse" />
+                        Maint
+                      </div>
+                    )}
+                    {item.status === "offline" && (
+                      <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 border border-slate-200 uppercase">
+                        Offline
+                      </div>
+                    )}
+                    {isActive && item.status === "online" && item.version && item.isInternal && (
+                      <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-100 uppercase">
+                        {item.version}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      console.log("Edit:", item.id)
-                    }}
-                    className="text-muted-foreground/30 hover:text-muted-foreground rounded-full p-1 transition-colors pointer-events-auto"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                </div>
 
-                {/* Title & description */}
-                <div className="flex-1 relative z-10 pointer-events-none">
-                  <h3 className="mb-1.5 text-base font-bold tracking-tight leading-snug group-hover:text-primary transition-colors">
-                    {item.title}
-                  </h3>
-                  {item.description && (
-                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
-                      {item.description}
-                    </p>
-                  )}
-                </div>
+                  {/* Top row: icon + actions */}
+                  <div className="mb-4 flex items-start justify-between relative z-10 pointer-events-none">
+                    <div
+                      className={`flex size-12 items-center justify-center rounded-2xl text-2xl shadow-sm border border-white/50 pointer-events-auto transition-transform group-hover:scale-110 ${item.iconBg ?? "bg-muted"} ${item.iconColor ?? "text-foreground"}`}
+                    >
+                      {item.icon ?? item.title.charAt(0)}
+                    </div>
 
-                {/* Info button */}
-                <div className="mt-4 flex items-center justify-between relative z-10 pointer-events-none">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="size-3" />
-                    TRUY CẬP
+                    <div className="flex items-center gap-1 pointer-events-auto">
+                      {userRole === "SYSTEM-ADMIN" && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            console.log("Edit:", item.id)
+                          }}
+                          className="text-slate-300 hover:text-primary hover:bg-primary/5 rounded-full p-2 transition-all"
+                        >
+                          <Pencil className="size-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          console.log("Info:", item.id)
-                        }}
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex size-8 items-center justify-center rounded-full border border-slate-200 transition-colors pointer-events-auto"
-                      >
-                        <Info className="size-4" />
-                        <span className="sr-only">Xem chi tiết</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Xem thông tin chi tiết</p>
-                    </TooltipContent>
-                  </Tooltip>
+
+                  {/* Title & description */}
+                  <div className="flex-1 relative z-10 pointer-events-none">
+                    <h3 className="mb-2 text-[17px] font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">
+                      {item.title}
+                    </h3>
+                    {item.description && (
+                      <p className="text-slate-500 line-clamp-2 text-[13px] leading-relaxed font-medium">
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Footer Actions */}
+                  <div className="mt-5 flex items-center justify-between relative z-10 pointer-events-none">
+                    <div className={`flex items-center gap-1.5 text-[10px] font-bold text-primary transition-all ${
+                      (!isActive || item.url === "#") ? "hidden" : "opacity-0 group-hover:opacity-100 -translate-x-2.5 group-hover:translate-x-0"
+                    }`}>
+                      TRUY CẬP <ArrowRight className="size-3" />
+                    </div>
+
+                    <div className="flex items-center gap-2 pointer-events-auto">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setSelectedItem(item);
+                              }}
+                              className="text-slate-400 hover:text-primary hover:bg-slate-50 inline-flex size-9 items-center justify-center rounded-2xl border border-slate-100 transition-all shadow-xs"
+                            >
+                              <Info className="size-5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Xem thông tin chi tiết</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ))}
+
+      {/* Detail Dialog */}
+      <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-4 mb-4">
+              <div className={`size-16 flex items-center justify-center rounded-2xl text-3xl shadow-sm border ${selectedItem?.iconBg ?? "bg-slate-100"} ${selectedItem?.iconColor ?? "text-slate-600"}`}>
+                {selectedItem?.icon ?? selectedItem?.title.charAt(0)}
+              </div>
+              <div className="text-left">
+                <DialogTitle className="text-2xl font-bold">{selectedItem?.title}</DialogTitle>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    selectedItem?.status === "online" ? "bg-emerald-100 text-emerald-700" :
+                    selectedItem?.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"
+                  }`}>
+                    {selectedItem?.status}
+                  </span>
+                  {selectedItem?.version && selectedItem?.isInternal && (
+                    <span className="text-xs font-bold text-slate-400">Phiên bản: {selectedItem.version}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <DialogDescription className="text-slate-600 text-base leading-relaxed">
+              {selectedItem?.description || "Không có mô tả chi tiết cho ứng dụng này."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Separator className="my-2" />
+
+          {userRole === "SYSTEM-ADMIN" && selectedItem?.versionHistory ? (
+            <div className="space-y-4">
+              <h4 className="text-sm font-bold flex items-center gap-2 text-slate-900 uppercase tracking-wider">
+                <Clock className="size-4 text-primary" /> Lịch sử phiên bản
+              </h4>
+              <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden text-sm">
+                {selectedItem.versionHistory.map((v, i) => (
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 border-b last:border-0 hover:bg-slate-100/50 transition-all">
+                    <div className="flex gap-3">
+                      <CheckCircle2 className="size-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{v.version}</span>
+                          <span className="text-[10px] text-slate-400 font-medium">{v.date}</span>
+                        </div>
+                        <p className="text-slate-500 text-xs mt-0.5">{v.changes}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 sm:mt-0 text-[10px] font-bold text-slate-400 uppercase tracking-tighter sm:text-right">
+                      By: {v.author}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+             <div className="space-y-4">
+               <div className="flex items-center gap-3 p-4 bg-blue-50 text-blue-800 rounded-2xl border border-blue-100">
+                  <Info className="size-5 shrink-0" />
+                  <p className="text-xs font-medium">Bạn đang sử dụng phiên bản ổn định nhất của ứng dụng này ({selectedItem?.version || "Latest"}).</p>
+               </div>
+               
+               <div className="grid grid-cols-2 gap-3 text-[11px] font-bold text-slate-500 uppercase">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="mb-1 text-[9px] opacity-60">Ngày cập nhật</p>
+                    <p className="text-slate-900">22 Tháng 02, 2024</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="mb-1 text-[9px] opacity-60">Môi trường</p>
+                    <p className="text-slate-900">PRODUCTION</p>
+                  </div>
+               </div>
+             </div>
+          )}
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <button 
+              onClick={() => setSelectedItem(null)}
+              className="flex-1 px-6 py-3 rounded-2xl border font-bold text-sm hover:bg-slate-50 transition-all"
+            >
+              Hủy
+            </button>
+            <button 
+              disabled={selectedItem?.status === "maintenance"}
+              onClick={() => {
+                if (selectedItem?.url) {
+                  if (selectedItem.url.startsWith("/")) {
+                    navigate(selectedItem.url);
+                  } else {
+                    window.open(selectedItem.url, "_blank");
+                  }
+                  setSelectedItem(null);
+                }
+              }}
+              className={`flex-1 px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                selectedItem?.status === "maintenance" 
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed border" 
+                  : "bg-primary text-white hover:opacity-90 shadow-lg shadow-primary/20"
+              }`}
+            >
+              <ExternalLink className="size-4" /> {selectedItem?.status === "maintenance" ? "ĐANG BẢO TRÌ" : "TRUY CẬP ỨNG DỤNG"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

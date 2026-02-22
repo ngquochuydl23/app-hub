@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { Globe, LogOut, User, Bell, Info, AlertTriangle, Clock } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -18,10 +19,12 @@ import { Separator } from "@/components/ui/separator"
 
 interface HeaderProps {
   userName?: string
+  userRole?: "SYSTEM-ADMIN" | "MANAGER" | "STAFF"
   avatarUrl?: string
   onViewProfile?: () => void
   onLogout?: () => void
   onLanguageChange?: (lang: string) => void
+  onRoleChange?: (role: "SYSTEM-ADMIN" | "MANAGER" | "STAFF") => void
 }
 
 const notifications = [
@@ -73,10 +76,12 @@ function getInitials(name: string): string {
 
 export function Header({
   userName = "Người dùng",
+  userRole = "STAFF",
   avatarUrl,
   onViewProfile,
   onLogout,
   onLanguageChange,
+  onRoleChange,
 }: HeaderProps) {
   const [language, setLanguage] = useState("vi")
 
@@ -85,19 +90,47 @@ export function Header({
     onLanguageChange?.(value)
   }
 
+  const roleColors = {
+    "SYSTEM-ADMIN": "bg-rose-100 text-rose-700 border-rose-200",
+    MANAGER: "bg-blue-100 text-blue-700 border-blue-200",
+    STAFF: "bg-slate-100 text-slate-700 border-slate-200",
+  }
+
   return (
     <header className="bg-background sticky top-0 z-50 w-full border-b">
       <div className="flex h-14 items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
-        <div className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg font-bold">
             M
           </div>
-          <span className="text-lg font-bold tracking-tight">Mediplantex</span>
-        </div>
+          <div className="flex flex-col -gap-1">
+            <span className="text-sm font-bold tracking-tight">Mediplantex</span>
+            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+              Gateway & Control
+            </span>
+          </div>
+        </Link>
 
         {/* Right section */}
         <div className="flex items-center gap-1.5 sm:gap-3">
+          {/* Role Switcher (Mock for Demo/EntraID Simulation) */}
+          <div className="hidden md:flex items-center border rounded-full px-1 py-1 bg-slate-50 mr-2">
+            {(["SYSTEM-ADMIN", "MANAGER", "STAFF"] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => onRoleChange?.(r)}
+                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                  userRole === r
+                    ? "bg-white shadow-sm ring-1 ring-slate-200 text-primary"
+                    : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                {r.split("-").pop()}
+              </button>
+            ))}
+          </div>
+
           {/* Notifications */}
           <Popover>
             <PopoverTrigger asChild>
@@ -194,6 +227,9 @@ export function Header({
                   <span className="text-sm font-medium leading-tight">
                     {userName}
                   </span>
+                  <div className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-bold ${roleColors[userRole]}`}>
+                    {userRole}
+                  </div>
                 </div>
               </div>
               <Separator />

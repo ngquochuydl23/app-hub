@@ -35,7 +35,7 @@ interface DashboardLayoutProps {
   onRoleChange: (role: "SYSTEM-ADMIN" | "MANAGER" | "STAFF") => void
 }
 
-export function DashboardLayout({ children, onRoleChange }: DashboardLayoutProps) {
+export function DashboardLayout({ children, userRole, onRoleChange }: DashboardLayoutProps) {
   const location = useLocation()
 
   const platformNav = [
@@ -108,7 +108,7 @@ export function DashboardLayout({ children, onRoleChange }: DashboardLayoutProps
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-bold text-slate-900 truncate tracking-tight">Admin User</p>
-                    <p className="text-[11px] font-medium text-slate-400 truncate">admin@mediplantex.vn</p>
+                    <p className="text-[11px] font-medium text-slate-400 truncate tracking-tight uppercase leading-none mt-0.5">{userRole}</p>
                   </div>
                   <ChevronRight className="size-4 text-slate-400 opacity-50 group-hover:translate-x-0.5 transition-transform" />
                 </button>

@@ -3,14 +3,17 @@ import { MenuGrid } from '@/components/menu-grid'
 import { Search, CalendarDays, Activity, ShieldCheck, AlertCircle, Clock } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from "@/components/ui/card"
+import { fetchLatestAuditLogs, type AuditLogEntry } from '@/services/api'
+import { type Role, ROLES } from '@/constants/roles'
 
 interface HomePageProps {
-  userRole?: "SYSTEM-ADMIN" | "MANAGER" | "STAFF"
+  userRole?: Role
 }
 
-export function HomePage({ userRole = "STAFF" }: HomePageProps) {
+export function HomePage({ userRole = ROLES.STAFF }: HomePageProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [latestLog, setLatestLog] = useState<AuditLogEntry | null>(null)
 
   const currentDate = new Intl.DateTimeFormat('vi-VN', {
     weekday: 'long',
@@ -30,6 +33,15 @@ export function HomePage({ userRole = "STAFF" }: HomePageProps) {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  // Fetch latest audit log for the snackbar
+  useEffect(() => {
+    if (userRole === "SYSTEM-ADMIN") {
+      fetchLatestAuditLogs(1)
+        .then((logs) => { if (logs.length > 0) setLatestLog(logs[0]) })
+        .catch(() => {})
+    }
+  }, [userRole])
 
   return (
     <div className="pb-20">
@@ -117,17 +129,17 @@ export function HomePage({ userRole = "STAFF" }: HomePageProps) {
           </div>
         )}
         {/* Audit Log Snackbar (Admin Only) */}
-        {userRole === "SYSTEM-ADMIN" && (
+        {userRole === "SYSTEM-ADMIN" && latestLog && (
           <div className="mb-8 flex items-center gap-4 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl animate-in fade-in zoom-in slide-in-from-top-4 duration-700">
             <div className="p-2 bg-white/10 rounded-xl">
               <Clock className="size-5 text-emerald-400" />
             </div>
             <div className="flex-1">
               <p className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Active Audit Log</p>
-              <p className="text-xs font-medium italic text-white/90">User "admin_root" updated Redirect URL for WMS_PROD_01</p>
+              <p className="text-xs font-medium italic text-white/90">{latestLog.details || `${latestLog.actor} performed ${latestLog.action}`}</p>
             </div>
             <div className="flex items-center gap-2 text-[10px] font-mono text-white/40 text-xs">
-              14:22:01
+              {new Date(latestLog.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </div>
           </div>
         )}

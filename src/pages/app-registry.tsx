@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { 
   Plus, 
   Search, 
@@ -13,7 +13,10 @@ import {
   ShieldCheck,
   Globe,
   Settings,
-  X
+  X,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -44,75 +47,127 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-
-interface RegisteredApp {
-  id: string
-  name: string
-  url: string
-  status: "online" | "offline" | "maintenance"
-  lastUpdated: string
-  version: string
-  visibility: string
-  type: "internal" | "external"
-}
-
-const apps: RegisteredApp[] = [
-  { id: "1", name: "Medi-POS Retail", url: "https://pos.mediplantex.vn", status: "online", lastUpdated: "2h ago", version: "v5.8.2", visibility: "All Staff", type: "internal" },
-  { id: "2", name: "Inventory Management", url: "https://stock.mediplantex.vn", status: "online", lastUpdated: "5h ago", version: "v2.2.0", visibility: "Warehouse", type: "internal" },
-  { id: "3", name: "Employee Self-Service", url: "https://ess.mediplantex.vn", status: "maintenance", lastUpdated: "Yesterday", version: "v1.4.5", visibility: "All Staff", type: "internal" },
-  { id: "4", name: "SAP Business One", url: "https://sap.external.com", status: "online", lastUpdated: "3d ago", version: "v2024.1", visibility: "Finance", type: "external" },
-  { id: "5", name: "Customer Portal", url: "https://portal.mediplantex.vn", status: "offline", lastUpdated: "12m ago", version: "v0.9.8-beta", visibility: "Public", type: "internal" },
-  { id: "6", name: "Regional Sales Hub", url: "https://sales.mediplantex.vn", status: "online", lastUpdated: "1h ago", version: "v3.1.2", visibility: "Sales Admin", type: "internal" },
-]
+import {
+  fetchAppsPaginated,
+  createApp as createAppApi,
+  deleteApp as deleteAppApi,
+  fetchCategoryOptions,
+  addAppToCategory,
+  type RegisteredApp,
+  type CategoryOption,
+} from "@/services/api"
+import { ALL_ROLES, APP_TYPES, APP_STATUSES, type AppType, type AppStatus } from "@/constants/roles"
 
 export function AppRegistry() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [allApps, setAllApps] = useState<RegisteredApp[]>(apps)
+  const [allApps, setAllApps] = useState<RegisteredApp[]>([])
+  const [categories, setCategories] = useState<CategoryOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const limit = 10
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [newApp, setNewApp] = useState<Partial<RegisteredApp>>({
+  const [newApp, setNewApp] = useState<{
+    name: string; url: string; status: string; type: string;
+    visibility: string; version: string;
+    allowedRoles: string[]; categoryId: string;
+  }>({
     name: "",
     url: "",
-    status: "online",
-    type: "internal",
+    status: APP_STATUSES.ONLINE,
+    type: APP_TYPES.INTERNAL,
     visibility: "All Staff",
-    version: "v1.0.0"
+    version: "v1.0.0",
+    allowedRoles: [...ALL_ROLES],
+    categoryId: "",
   })
 
-  const filteredApps = allApps.filter(app => 
-    app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.url.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  useEffect(() => {
+    let cancelled = false
+    const params: { page: number; limit: number; search?: string } = { page, limit }
+    if (searchQuery.trim()) params.search = searchQuery.trim()
 
-  const handleRegister = (e: React.FormEvent) => {
+    fetchAppsPaginated(params)
+      .then((res) => {
+        if (!cancelled) {
+          setAllApps(res.apps)
+          setTotalPages(res.totalPages)
+          setTotal(res.total)
+        }
+      })
+      .catch((err) => console.error("Failed to fetch apps:", err))
+      .finally(() => { if (!cancelled) setLoading(false) })
+
+    return () => { cancelled = true }
+  }, [page, refreshKey, searchQuery])
+
+  useEffect(() => {
+    fetchCategoryOptions()
+      .then((cats) => setCategories(cats))
+      .catch((err) => console.error("Failed to fetch categories:", err))
+  }, [])
+
+  const filteredApps = allApps
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newApp.name || !newApp.url) return
 
-    const appToAdd: RegisteredApp = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newApp.name || "",
-      url: newApp.url || "",
-      status: (newApp.status as "online" | "offline" | "maintenance") || "online",
-      lastUpdated: "Just now",
-      version: newApp.version || "v1.0.0",
-      visibility: newApp.visibility || "All Staff",
-      type: (newApp.type as "internal" | "external") || "internal"
+    try {
+      const created = await createAppApi({
+        title: newApp.name,
+        url: newApp.url,
+        status: newApp.status,
+        type: newApp.type,
+        visibility: newApp.visibility,
+        version: newApp.version,
+        isInternal: newApp.type === APP_TYPES.INTERNAL,
+        allowedRoles: newApp.allowedRoles,
+      })
+
+      // Assign to category if selected
+      if (newApp.categoryId) {
+        try {
+          await addAppToCategory(newApp.categoryId, created.id)
+        } catch (err) {
+          console.error("Failed to add app to category:", err)
+        }
+      }
+
+      setAllApps([created, ...allApps.slice(0, limit - 1)])
+      setTotal((t) => t + 1)
+      setRefreshKey((k) => k + 1)
+      setIsDialogOpen(false)
+      setNewApp({
+        name: "",
+        url: "",
+        status: APP_STATUSES.ONLINE,
+        type: APP_TYPES.INTERNAL,
+        visibility: "All Staff",
+        version: "v1.0.0",
+        allowedRoles: [...ALL_ROLES],
+        categoryId: "",
+      })
+    } catch (err) {
+      console.error("Failed to register app:", err)
     }
-
-    setAllApps([appToAdd, ...allApps])
-    setIsDialogOpen(false)
-    setNewApp({
-      name: "",
-      url: "",
-      status: "online",
-      type: "internal",
-      visibility: "All Staff",
-      version: "v1.0.0"
-    })
   }
 
-  const handleDelete = (id: string) => {
-    setAllApps(allApps.filter(app => app.id !== id))
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteAppApi(id)
+      setTotal((t) => t - 1)
+      setRefreshKey((k) => k + 1)
+    } catch (err) {
+      console.error("Failed to delete app:", err)
+    }
   }
+
+  const totalApps = total
+  const internalApps = allApps.filter(a => a.type === APP_TYPES.INTERNAL).length
+  const onlineApps = allApps.filter(a => a.status === APP_STATUSES.ONLINE).length
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -179,14 +234,14 @@ export function AppRegistry() {
                           <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-1">Deployment Type</Label>
                           <Select 
                             value={newApp.type} 
-                            onValueChange={(v: "internal" | "external") => setNewApp({...newApp, type: v})}
+                            onValueChange={(v: AppType) => setNewApp({...newApp, type: v})}
                           >
                             <SelectTrigger className="h-12 bg-slate-50 border-none rounded-xl font-bold text-slate-900 focus:ring-1 focus:ring-slate-300">
                               <SelectValue placeholder="Type" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-slate-200">
-                              <SelectItem value="internal" className="font-bold rounded-lg cursor-pointer py-2">Internal Hub</SelectItem>
-                              <SelectItem value="external" className="font-bold rounded-lg cursor-pointer py-2">External SaaS</SelectItem>
+                              <SelectItem value={APP_TYPES.INTERNAL} className="font-bold rounded-lg cursor-pointer py-2">Internal Hub</SelectItem>
+                              <SelectItem value={APP_TYPES.EXTERNAL} className="font-bold rounded-lg cursor-pointer py-2">External SaaS</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -195,17 +250,70 @@ export function AppRegistry() {
                           <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-1">Initial Status</Label>
                           <Select 
                             value={newApp.status} 
-                            onValueChange={(v: "online" | "offline" | "maintenance") => setNewApp({...newApp, status: v})}
+                            onValueChange={(v: AppStatus) => setNewApp({...newApp, status: v})}
                           >
                             <SelectTrigger className="h-12 bg-slate-50 border-none rounded-xl font-bold text-slate-900 focus:ring-1 focus:ring-slate-300">
                               <SelectValue placeholder="Status" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-slate-200">
-                              <SelectItem value="online" className="font-bold rounded-lg cursor-pointer py-2 text-emerald-600">Online</SelectItem>
-                              <SelectItem value="maintenance" className="font-bold rounded-lg cursor-pointer py-2 text-amber-600">Maintenance</SelectItem>
+                              <SelectItem value={APP_STATUSES.ONLINE} className="font-bold rounded-lg cursor-pointer py-2 text-emerald-600">Online</SelectItem>
+                              <SelectItem value={APP_STATUSES.MAINTENANCE} className="font-bold rounded-lg cursor-pointer py-2 text-amber-600">Maintenance</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                      </div>
+
+                      {/* Allowed Roles multi-select */}
+                      <div className="grid gap-2">
+                        <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-1">Allowed Roles</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {ALL_ROLES.map((role) => {
+                            const selected = newApp.allowedRoles.includes(role)
+                            return (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => {
+                                  setNewApp((prev) => ({
+                                    ...prev,
+                                    allowedRoles: selected
+                                      ? prev.allowedRoles.filter((r) => r !== role)
+                                      : [...prev.allowedRoles, role],
+                                  }))
+                                }}
+                                className={cn(
+                                  "px-3 py-2 rounded-xl text-xs font-bold transition-all border",
+                                  selected
+                                    ? "bg-slate-900 text-white border-slate-900"
+                                    : "bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-400"
+                                )}
+                              >
+                                {role}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Category select */}
+                      <div className="grid gap-2">
+                        <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-1">Category</Label>
+                        <Select
+                          value={newApp.categoryId}
+                          onValueChange={(v) => setNewApp({ ...newApp, categoryId: v })}
+                        >
+                          <SelectTrigger className="h-12 bg-slate-50 border-none rounded-xl font-bold text-slate-900 focus:ring-1 focus:ring-slate-300">
+                            <SelectValue placeholder="Select a category (optional)" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl border-slate-200">
+                            <SelectItem value="none" className="font-bold rounded-lg cursor-pointer py-2 text-slate-400">None</SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.id} className="font-bold rounded-lg cursor-pointer py-2">
+                                {cat.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>
@@ -224,9 +332,9 @@ export function AppRegistry() {
       {/* Stats Counter */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: "Total Apps", count: "48", icon: Globe, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Internal Hub", count: "32", icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Critical Services", count: "12", icon: Settings, color: "text-rose-600", bg: "bg-rose-50" },
+          { label: "Total Apps", count: String(totalApps), icon: Globe, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Internal Hub", count: String(internalApps), icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Online Services", count: String(onlineApps), icon: Settings, color: "text-rose-600", bg: "bg-rose-50" },
         ].map((stat, i) => (
           <Card key={i} className="border-slate-200/60 shadow-none rounded-3xl">
             <CardContent className="p-4 flex items-center gap-4">
@@ -250,7 +358,7 @@ export function AppRegistry() {
              <Input 
                placeholder="Search registry..." 
                value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
+               onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
                className="h-10 pl-10 bg-slate-50 border-none rounded-xl text-sm font-medium focus-visible:ring-1 focus-visible:ring-slate-300 w-full md:max-w-md shadow-none" 
              />
            </div>
@@ -271,13 +379,25 @@ export function AppRegistry() {
               </tr>
             </thead>
             <tbody>
-              {filteredApps.map((app) => (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-16 text-center">
+                    <Loader2 className="size-6 animate-spin text-slate-400 mx-auto" />
+                  </td>
+                </tr>
+              ) : filteredApps.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-16 text-center text-sm text-slate-400 font-medium">
+                    Không tìm thấy ứng dụng nào.
+                  </td>
+                </tr>
+              ) : filteredApps.map((app) => (
                 <tr key={app.id} className="group border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
                      <div className="flex items-center gap-3">
                         <div className={cn(
                           "size-10 rounded-xl flex items-center justify-center font-bold text-lg border shadow-sm transition-transform group-hover:scale-110",
-                          app.type === "internal" ? "bg-indigo-50 text-indigo-600 border-indigo-100" : "bg-slate-50 text-slate-600 border-slate-200"
+                          app.type === APP_TYPES.INTERNAL ? "bg-indigo-50 text-indigo-600 border-indigo-100" : "bg-slate-50 text-slate-600 border-slate-200"
                         )}>
                            {app.name.charAt(0)}
                         </div>
@@ -291,17 +411,17 @@ export function AppRegistry() {
                   </td>
                   <td className="px-6 py-4">
                      <div className="flex items-center gap-2">
-                        {app.status === "online" && (
+                        {app.status === APP_STATUSES.ONLINE && (
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold ring-1 ring-emerald-100 uppercase tracking-tight">
                             <CheckCircle2 className="size-3" /> Online
                           </div>
                         )}
-                        {app.status === "offline" && (
+                        {app.status === APP_STATUSES.OFFLINE && (
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-rose-50 text-rose-700 text-[10px] font-bold ring-1 ring-rose-100 uppercase tracking-tight">
                             <AlertCircle className="size-3" /> Offline
                           </div>
                         )}
-                        {app.status === "maintenance" && (
+                        {app.status === APP_STATUSES.MAINTENANCE && (
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-[10px] font-bold ring-1 ring-amber-100 uppercase tracking-tight">
                             <Construction className="size-3" /> Maintenance
                           </div>
@@ -350,11 +470,55 @@ export function AppRegistry() {
         
         {/* Footer info */}
         <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
-           <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest italic">Protected by Mediplantex RBAC Protocol 4.0</p>
+           <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
+             Trang <span className="text-slate-900 font-bold">{page}</span> / {totalPages} · Tổng <span className="text-slate-900 font-bold">{total}</span> ứng dụng
+           </p>
            <div className="flex items-center gap-2">
-             <Button variant="ghost" size="sm" className="h-8 text-xs font-bold text-slate-400" disabled>Previous</Button>
-             <Button variant="ghost" size="sm" className="h-8 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-lg shadow-sm">1</Button>
-             <Button variant="ghost" size="sm" className="h-8 text-xs font-bold text-slate-400" disabled>Next</Button>
+             <Button
+               variant="ghost"
+               size="sm"
+               className="h-8 text-xs font-bold text-slate-600 gap-1"
+               disabled={page <= 1}
+               onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)) }}
+             >
+               <ChevronLeft className="size-3" /> Trước
+             </Button>
+             {Array.from({ length: totalPages }, (_, i) => i + 1)
+               .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+               .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                 if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...")
+                 acc.push(p)
+                 return acc
+               }, [])
+               .map((p, idx) =>
+                 typeof p === "string" ? (
+                   <span key={`dots-${idx}`} className="text-xs text-slate-400 px-1">...</span>
+                 ) : (
+                   <Button
+                     key={p}
+                     variant="ghost"
+                     size="sm"
+                     className={cn(
+                       "h-8 w-8 text-xs font-bold rounded-lg",
+                       p === page
+                         ? "text-slate-900 bg-white border border-slate-200 shadow-sm"
+                         : "text-slate-400 hover:text-slate-900"
+                     )}
+                     onClick={() => { if (p !== page) { setLoading(true); setPage(p) } }}
+                   >
+                     {p}
+                   </Button>
+                 )
+               )}
+             <Button
+               variant="ghost"
+               size="sm"
+               className="h-8 text-xs font-bold text-slate-600 gap-1"
+               disabled={page >= totalPages}
+               onClick={() => { setLoading(true); setPage((p) => p + 1) }}
+             >
+               Sau <ChevronRight className="size-3" />
+             </Button>
            </div>
         </div>
       </Card>

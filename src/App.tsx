@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { HomePage } from '@/pages/home-page'
 import { AdminDashboard } from '@/pages/admin-dashboard'
 import { AppRegistry } from '@/pages/app-registry'
+import { CategoryManager } from '@/pages/category-manager'
 import './App.css'
 
 export type UserRole = "SYSTEM-ADMIN" | "MANAGER" | "STAFF"
@@ -42,6 +43,7 @@ function App() {
                   <Routes>
                     <Route index element={<AdminDashboard />} />
                     <Route path="registry" element={<AppRegistry />} />
+                    <Route path="categories" element={<CategoryManager />} />
                     <Route path="rbac" element={<div className="p-10 font-bold bg-white m-6 rounded-3xl border shadow-sm">Role Based Access Control Console</div>} />
                     <Route path="hr" element={<div className="p-10 font-bold bg-white m-6 rounded-3xl border shadow-sm">Personnel & Teams Directory</div>} />
                     <Route path="settings" element={<div className="p-10 font-bold bg-white m-6 rounded-3xl border shadow-sm">Global System Configuration</div>} />

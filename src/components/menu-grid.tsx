@@ -1,6 +1,8 @@
-﻿import { useState } from "react"
+﻿import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Pencil, ExternalLink, Info, Clock, CheckCircle2, ArrowRight } from "lucide-react"
+import { Pencil, ExternalLink, Info, Clock, CheckCircle2, ArrowRight, Loader2 } from "lucide-react"
+import { fetchCategories } from "@/services/api"
+import { type Role, type AppStatus, ROLES, APP_STATUSES } from "@/constants/roles"
 import {
   Tooltip,
   TooltipContent,
@@ -36,9 +38,9 @@ export interface MenuItem {
   /** Tailwind color for left accent border */
   accentColor?: string
   /** App Status */
-  status?: "online" | "offline" | "maintenance"
+  status?: AppStatus
   /** Roles that can see this app */
-  allowedRoles?: ("SYSTEM-ADMIN" | "MANAGER" | "STAFF")[]
+  allowedRoles?: Role[]
   /** Branch specific visibility */
   branches?: string[]
   /** App Version */
@@ -58,200 +60,29 @@ export interface MenuGroup {
   items: MenuItem[]
 }
 
-const defaultMenuGroups: MenuGroup[] = [
-  {
-    id: "admin-tools",
-    label: "Hệ thống quản trị (Admin Control)",
-    labelBg: "bg-fuchsia-100",
-    labelColor: "text-fuchsia-700",
-    items: [
-      {
-        id: "registry",
-        title: "App Registry",
-        description: "Quản lý mục lục & URLs ứng dụng trung tâm cho toàn bộ tập đoàn.",
-        url: "/gateway-control/registry",
-        icon: "🔐",
-        iconBg: "bg-rose-100",
-        iconColor: "text-rose-600",
-        status: "online",
-        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
-        version: "v2.5.1",
-        isInternal: true,
-        versionHistory: [
-          { version: "v2.5.1", date: "2024-05-20", author: "admin_root", changes: "Cập nhật logic phân phối URL theo vùng miền" },
-          { version: "v2.4.9", date: "2024-05-15", author: "dev_team", changes: "Vá lỗi bảo mật CSRF trong console" },
-        ],
-      },
-      {
-        id: "permissions",
-        title: "Role & RBAC",
-        description: "Định nghĩa vai trò, gán quyền và quản lý vòng đời người dùng.",
-        url: "/gateway-control/rbac",
-        icon: "👥",
-        iconBg: "bg-indigo-100",
-        iconColor: "text-indigo-600",
-        status: "online",
-        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
-        version: "v1.2.0",
-        isInternal: true,
-        versionHistory: [
-          { version: "v1.2.0", date: "2024-02-10", author: "security_lead", changes: "Tích hợp EntraID v2" },
-        ],
-      },
-      {
-        id: "monitoring",
-        title: "System Health",
-        description: "Theo dõi tình trạng máy chủ, logs lỗi và hiệu năng thời gian thực.",
-        url: "/gateway-control",
-        icon: "📊",
-        iconBg: "bg-emerald-100",
-        iconColor: "text-emerald-600",
-        status: "maintenance",
-        allowedRoles: ["SYSTEM-ADMIN", "MANAGER"],
-        version: "v4.0.0-rc1",
-        isInternal: true,
-      },
-    ],
-  },
-  {
-    id: "pharmacy",
-    label: "Nhà thuốc",
-    labelBg: "bg-green-100",
-    labelColor: "text-green-700",
-    items: [
-      {
-        id: "pos",
-        title: "POS Nhà thuốc",
-        description: "Giao diện bán lẻ nhanh, tích hợp thanh toán QR và quản lý ca trực.",
-        url: "https://pos.nhathuoc.vn",
-        icon: "💊",
-        iconBg: "bg-green-100",
-        iconColor: "text-green-600",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v5.8.0",
-      },
-      {
-        id: "pharmacy-mgmt",
-        title: "Quản lý chuỗi",
-        description: "Điều phối tồn kho giữa các chi nhánh, báo cáo doanh thu tổng hợp.",
-        url: "https://mgmt.nhathuoc.vn",
-        icon: "🏪",
-        iconBg: "bg-emerald-100",
-        iconColor: "text-emerald-600",
-        status: "online",
-        allowedRoles: ["MANAGER", "SYSTEM-ADMIN"],
-        version: "v3.2.1",
-      },
-    ],
-  },
-  {
-    id: "warehouse",
-    label: "Kho vận",
-    labelBg: "bg-amber-100",
-    labelColor: "text-amber-700",
-    items: [
-      {
-        id: "wms",
-        title: "Quản lý kho (WMS)",
-        description: "Hệ thống quản lý nhập xuất, vị trí kho và tối ưu hóa lấy hàng.",
-        url: "https://wms.nhathuoc.vn",
-        icon: "🏭",
-        iconBg: "bg-amber-100",
-        iconColor: "text-amber-600",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v2.10.4",
-        versionHistory: [
-          { version: "v2.10.4", date: "2024-05-18", author: "wms_prod", changes: "Tối ưu hóa thuật toán FIFO cho kho mát" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "clinic",
-    label: "Phòng khám",
-    labelBg: "bg-blue-100",
-    labelColor: "text-blue-700",
-    items: [
-      {
-        id: "emr",
-        title: "Bệnh án điện tử",
-        description: "Quản lý hồ sơ bệnh nhân, kết quả xét nghiệm và lịch sử khám bệnh.",
-        url: "https://emr.phongkham.vn",
-        icon: "🗂️",
-        iconBg: "bg-blue-100",
-        iconColor: "text-blue-600",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v1.4.0",
-      },
-    ],
-  },
-  {
-    id: "hr",
-    label: "Nhân sự",
-    labelBg: "bg-purple-100",
-    labelColor: "text-purple-700",
-    items: [
-      {
-        id: "hrm",
-        title: "Cổng nhân sự",
-        description: "Xem bảng công, đăng ký nghỉ phép và cập nhật thông tin cá nhân.",
-        url: "https://hrm.nhathuoc.vn",
-        icon: "👤",
-        iconBg: "bg-purple-100",
-        iconColor: "text-purple-600",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v4.2.0",
-      },
-    ],
-  },
-  {
-    id: "general",
-    label: "Hệ thống chung",
-    labelBg: "bg-slate-100",
-    labelColor: "text-slate-700",
-    items: [
-      {
-        id: "erp",
-        title: "Hệ thống ERP",
-        description: "Quản trị nguồn lực doanh nghiệp tích hợp kế toán và cung ứng.",
-        url: "https://erp.nhathuoc.vn",
-        icon: "🔗",
-        iconBg: "bg-slate-100",
-        iconColor: "text-slate-600",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v2024.Q1",
-      },
-      {
-        id: "notifications",
-        title: "Notification Hub",
-        description: "Trung tâm quản lý thông báo, email và tin nhắn hệ thống tập trung.",
-        url: "#",
-        icon: "🔔",
-        iconBg: "bg-rose-100",
-        iconColor: "text-rose-500",
-        status: "online",
-        allowedRoles: ["STAFF", "MANAGER", "SYSTEM-ADMIN"],
-        version: "v2.0.1",
-        isInternal: true,
-      },
-    ],
-  },
-]
-
 interface MenuGridProps {
-  groups?: MenuGroup[]
-  userRole?: "SYSTEM-ADMIN" | "MANAGER" | "STAFF"
+  userRole?: Role
   searchQuery?: string
 }
 
-export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searchQuery = "" }: MenuGridProps) {
+export function MenuGrid({ userRole = ROLES.STAFF, searchQuery = "" }: MenuGridProps) {
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
+  const [groups, setGroups] = useState<MenuGroup[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    fetchCategories()
+      .then((data) => setGroups(data))
+      .catch((err) => {
+        console.error("Failed to fetch categories:", err)
+        setError("Không thể tải danh mục ứng dụng.")
+      })
+      .finally(() => setLoading(false))
+  }, [])
 
   // Simple filtering based on role and search query
   const filteredGroups = groups
@@ -269,6 +100,24 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
 
   return (
     <div className="flex flex-col gap-10">
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-8 animate-spin text-slate-400" />
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center justify-center py-20">
+          <p className="text-sm text-rose-500 font-medium">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && filteredGroups.length === 0 && (
+        <div className="flex items-center justify-center py-20">
+          <p className="text-sm text-slate-400 font-medium">Không tìm thấy ứng dụng nào.</p>
+        </div>
+      )}
+
       {filteredGroups.map((group) => (
         <section key={group.id} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="mb-6 flex items-center gap-4">
@@ -279,7 +128,7 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
             </span>
             <div className="bg-slate-200 h-px flex-1 opacity-50" />
 
-            {userRole === "SYSTEM-ADMIN" && (
+            {userRole === ROLES.SYSTEM_ADMIN && (
               <button className="text-[10px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-wider">
                 Configure Group
               </button>
@@ -288,7 +137,7 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
             {group.items.map((item) => {
-              const isActive = item.status !== "offline";
+              const isActive = item.status !== APP_STATUSES.OFFLINE;
               
               return (
                 <div
@@ -310,18 +159,18 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
                 >
                   {/* Status Badge */}
                   <div className="absolute top-4 right-4 z-20">
-                    {item.status === "maintenance" && (
+                    {item.status === APP_STATUSES.MAINTENANCE && (
                       <div className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200 uppercase">
                         <div className="size-1 rounded-full bg-amber-500 animate-pulse" />
                         Maint
                       </div>
                     )}
-                    {item.status === "offline" && (
+                    {item.status === APP_STATUSES.OFFLINE && (
                       <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 border border-slate-200 uppercase">
                         Offline
                       </div>
                     )}
-                    {isActive && item.status === "online" && item.version && item.isInternal && (
+                    {isActive && item.status === APP_STATUSES.ONLINE && item.version && item.isInternal && (
                       <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-100 uppercase">
                         {item.version}
                       </div>
@@ -337,7 +186,7 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
                     </div>
 
                     <div className="flex items-center gap-1 pointer-events-auto">
-                      {userRole === "SYSTEM-ADMIN" && (
+                      {userRole === ROLES.SYSTEM_ADMIN && (
                         <button
                           onClick={(e) => {
                             e.preventDefault()
@@ -413,8 +262,8 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
                 <DialogTitle className="text-2xl font-bold">{selectedItem?.title}</DialogTitle>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                    selectedItem?.status === "online" ? "bg-emerald-100 text-emerald-700" :
-                    selectedItem?.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"
+                    selectedItem?.status === APP_STATUSES.ONLINE ? "bg-emerald-100 text-emerald-700" :
+                    selectedItem?.status === APP_STATUSES.MAINTENANCE ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"
                   }`}>
                     {selectedItem?.status}
                   </span>
@@ -431,7 +280,7 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
 
           <Separator className="my-2" />
 
-          {userRole === "SYSTEM-ADMIN" && selectedItem?.versionHistory ? (
+          {userRole === ROLES.SYSTEM_ADMIN && selectedItem?.versionHistory ? (
             <div className="space-y-4">
               <h4 className="text-sm font-bold flex items-center gap-2 text-slate-900 uppercase tracking-wider">
                 <Clock className="size-4 text-primary" /> Lịch sử phiên bản
@@ -484,7 +333,7 @@ export function MenuGrid({ groups = defaultMenuGroups, userRole = "STAFF", searc
               Hủy
             </button>
             <button 
-              disabled={selectedItem?.status === "maintenance"}
+              disabled={selectedItem?.status === APP_STATUSES.MAINTENANCE}
               onClick={() => {
                 if (selectedItem?.url) {
                   if (selectedItem.url.startsWith("/")) {
